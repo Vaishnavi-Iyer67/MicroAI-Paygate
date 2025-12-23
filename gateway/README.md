@@ -29,3 +29,21 @@ go run main.go
 ```
 
 Ensure the Verifier service is running on port 3002 before starting the Gateway.
+
+## Configuration
+
+Environment variables (via `.env`):
+
+- `OPENROUTER_API_KEY` (required) — API key for OpenRouter
+- `OPENROUTER_MODEL` (optional) — model name, default `z-ai/glm-4.5-air:free`
+- `VERIFIER_URL` (optional) — override verifier endpoint, default `http://127.0.0.1:3002/verify`
+- `RECIPIENT_ADDRESS` (optional) — payment recipient; falls back to hardcoded value if unset
+- `CHAIN_ID` (optional) — chain id used in EIP-712 domain; default `8453`
+
+Ports: Gateway listens on `3000` by default. Update configs if you must avoid conflicts.
+
+## Testing
+
+```bash
+go test -v
+```

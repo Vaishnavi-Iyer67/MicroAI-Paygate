@@ -34,3 +34,20 @@ bun run dev
 ```
 
 The application will be available at `http://localhost:3001`.
+
+## Configuration
+
+Environment variables (place in `.env.local` or `.env`):
+
+- `NEXT_PUBLIC_GATEWAY_URL` — gateway base URL (e.g., http://localhost:3000)
+- `NEXT_PUBLIC_CHAIN_ID` — chain id for EIP-712 domain (align with gateway/verifier)
+- `NEXT_PUBLIC_RPC_URL` — RPC endpoint for wallet network detection/switching
+- `NEXT_PUBLIC_RECIPIENT` — expected recipient address for payments
+
+## Payment Flow
+
+1) Send summarize request to gateway. 2) Receive `402 Payment Required`. 3) Sign EIP-712 typed data in-browser. 4) Retry with `X-402-Signature` and `X-402-Nonce`. 5) Display AI result or failure if the upstream model call fails.
+
+## Testing
+
+Frontend E2E coverage is driven from the root `tests/e2e.test.ts`; ensure the gateway and verifier are reachable at the configured URLs when running it.

@@ -30,3 +30,25 @@ cargo run
 ```
 
 The service listens on port 3002 by default.
+
+## Configuration
+
+Current implementation has no required env vars. It uses hardcoded EIP-712 domain values:
+
+- `name`: MicroAI Paygate
+- `version`: 1
+- `chainId`: 1 (tests) / request payload (runtime)
+- `verifyingContract`: 0x0000000000000000000000000000000000000000
+
+If you change domain parameters in the gateway/frontend, update them here to stay in sync.
+
+## Health and Verification
+
+- Health: `curl http://localhost:3002/health`
+- Verify: `curl -X POST http://localhost:3002/verify -H "Content-Type: application/json" -d '{"context":{...},"signature":"0x..."}'`
+
+## Testing
+
+```bash
+cargo test
+```

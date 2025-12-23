@@ -56,6 +56,28 @@ The Verifier is a specialized computation unit designed for one task: Elliptic C
 
 ## Installation & Deployment
 
+### Quickstart (Local)
+
+```bash
+git clone https://github.com/AnkanMisra/MicroAI-Paygate.git
+cd MicroAI-Paygate
+bun install
+# Optional: go mod tidy && cargo build
+bun run stack
+```
+
+### Environment
+
+Create a `.env` (or use `.env.example`) with at least:
+
+- `OPENROUTER_API_KEY` — API key for OpenRouter
+- `OPENROUTER_MODEL` — model name (default: `z-ai/glm-4.5-air:free`)
+- `BASE_RPC_URL` — RPC for Base (if you extend on-chain checks)
+- `RECIPIENT_ADDRESS` — recipient for payments (gateway)
+- `CHAIN_ID` — chain used in signatures (gateway + verifier)
+
+Ensure ports `3000` (gateway), `3001` (web), and `3002` (verifier) are free.
+
 ### Docker Deployment (Production)
 
 For production environments, we provide a containerized setup using Docker Compose. This orchestrates all three services in an isolated network.
@@ -88,7 +110,6 @@ For rapid development, use the unified stack command which runs services on the 
     ```
 
 ## Testing
-
 We maintain a comprehensive test suite covering all layers of the stack, from unit tests for individual microservices to full end-to-end (E2E) integration tests.
 
 ### End-to-End (E2E) Tests
@@ -104,7 +125,8 @@ The E2E tests simulate a real client interaction:
 ```bash
 bun run test:e2e
 ```
-*This command automatically builds and starts the Go Gateway and Rust Verifier in the background before running the tests.*
+Prerequisites: Bun, Go, and Rust toolchains installed. This command uses `run_e2e.sh` to build and start the Go Gateway and Rust Verifier before executing tests.
+If `OPENROUTER_API_KEY` is missing, the signature path will pass but the final AI call may return 500 after verification.
 
 ### Unit Tests
 
@@ -121,6 +143,20 @@ Tests the cryptographic verification logic and EIP-712 implementation.
 cd verifier
 cargo test
 ```
+
+## Troubleshooting
+
+- Port already in use: ensure 3000/3001/3002 are free or export alternative ports in env and update client config.
+- Missing OpenRouter key: E2E tests may pass signature validation but fail on AI response with 500.
+- Network errors inside Docker: use service names (`gateway:3000`, `verifier:3002`) instead of localhost.
+
+## Contributing
+
+We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and open issues before submitting PRs.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
 
 ## API Reference
 
