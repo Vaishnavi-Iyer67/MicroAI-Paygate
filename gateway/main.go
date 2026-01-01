@@ -45,6 +45,30 @@ func main() {
 	}
 
 	r := gin.Default()
+	r.StaticFile("/openapi.yaml", "openapi.yaml")
+	r.GET("/docs", func(c *gin.Context) {
+	c.Header("Content-Type", "text/html")
+	c.String(200, `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MicroAI Paygate Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/openapi.yaml',
+      dom_id: '#swagger-ui'
+    });
+  </script>
+</body>
+</html>
+`)
+})
+
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3001"},
