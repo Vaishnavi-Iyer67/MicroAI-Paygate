@@ -10,7 +10,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o gateway main.go
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates && adduser -D -u 1000 appuser
 WORKDIR /home/appuser
+
+# Copy binary
 COPY --from=builder /app/gateway /home/appuser/gateway
+
+# Copy OpenAPI spec for /docs and /openapi.yaml endpoints
+COPY --from=builder /app/openapi.yaml /home/appuser/openapi.yaml
+
 RUN chown -R appuser:appuser /home/appuser
 USER appuser
 EXPOSE 3000
