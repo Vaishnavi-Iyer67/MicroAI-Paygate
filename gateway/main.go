@@ -1,3 +1,6 @@
+// Package main implements the gateway HTTP server used by MicroAI-Paygate.
+// It provides request handlers, middleware, and configuration helpers
+// for timeouts and rate limiting.
 package main
 
 import (
@@ -6,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -139,13 +143,10 @@ func main() {
 		log.Println("Rate limiting enabled")
 	}
 
-	// Global request timeout middleware
-	r.Use(RequestTimeoutMiddleware(getRequestTimeout()))
-
-	// Health check with shorter timeout
+	// Health check with shorter timeout (2s)
 	r.GET("/healthz", RequestTimeoutMiddleware(getHealthCheckTimeout()), handleHealth)
 
-	// AI endpoints with AI-specific timeout
+	// AI endpoints with AI-specific timeout (30s)
 	aiGroup := r.Group("/api/ai")
 	aiGroup.Use(RequestTimeoutMiddleware(getAITimeout()))
 	aiGroup.POST("/summarize", handleSummarize)
@@ -159,24 +160,28 @@ func main() {
 	r.Run(":" + port)
 }
 
-// - 500: Verifier or AI service failure (includes error details)
+// handleSummarize handles POST /api/ai/summarize requests. It validates
+// payment headers, calls the verifier service to validate the signature, and
+// forwards the text to the AI service. The handler respects context timeouts
+// applied by middleware and returns appropriate HTTP errors (402, 403, 504,
+// 500) to the client.
 func handleSummarize(c *gin.Context) {
 	signature := c.GetHeader("X-402-Signature")
 	nonce := c.GetHeader("X-402-Nonce")
 
 	// 1. Payment Required
 	if signature == "" || nonce == "" {
-		context := createPaymentContext()
+		paymentContext := createPaymentContext()
 		c.JSON(402, gin.H{
 			"error":          "Payment Required",
 			"message":        "Please sign the payment context",
-			"paymentContext": context,
+			"paymentContext": paymentContext,
 		})
 		return
 	}
 
 	// 2. Verify Payment (Call Rust Service)
-	context := PaymentContext{
+	paymentCtx := PaymentContext{
 		Recipient: getRecipientAddress(),
 		Token:     "USDC",
 		Amount:    getPaymentAmount(),
@@ -185,7 +190,7 @@ func handleSummarize(c *gin.Context) {
 	}
 
 	verifyReq := VerifyRequest{
-		Context:   context,
+		Context:   paymentCtx,
 		Signature: signature,
 	}
 
@@ -198,12 +203,18 @@ func handleSummarize(c *gin.Context) {
 	verifierCtx, verifierCancel := context.WithTimeout(c.Request.Context(), getVerifierTimeout())
 	defer verifierCancel()
 
-	vreq, _ := http.NewRequestWithContext(verifierCtx, "POST", verifierURL+"/verify", bytes.NewBuffer(verifyBody))
+	vreq, err := http.NewRequestWithContext(verifierCtx, "POST", verifierURL+"/verify", bytes.NewBuffer(verifyBody))
+	if err != nil {
+		// If the request cannot be created, return 500
+		c.JSON(500, gin.H{"error": "Invalid verifier request", "details": err.Error()})
+		return
+	}
 	vreq.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	resp, err := client.Do(vreq)
 	if err != nil {
-		if verifierCtx.Err() == context.DeadlineExceeded {
+		// If the verifier or parent context timed out, return Gateway Timeout
+		if verifierCtx.Err() == context.DeadlineExceeded || c.Request.Context().Err() == context.DeadlineExceeded {
 			c.JSON(504, gin.H{"error": "Gateway Timeout", "message": "Verifier request timed out"})
 			return
 		}
@@ -233,7 +244,7 @@ func handleSummarize(c *gin.Context) {
 	summary, err := callOpenRouter(c.Request.Context(), req.Text)
 	if err != nil {
 		// If the error was due to a timeout, return 504
-		if strings.Contains(strings.ToLower(err.Error()), "timeout") || c.Request.Context().Err() == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) || c.Request.Context().Err() == context.DeadlineExceeded {
 			c.JSON(504, gin.H{"error": "Gateway Timeout", "message": "AI request timed out"})
 			return
 		}
@@ -315,16 +326,19 @@ func callOpenRouter(ctx context.Context, text string) (string, error) {
 	if openRouterURL == "" {
 		openRouterURL = "https://openrouter.ai/api/v1/chat/completions"
 	}
-	req, _ := http.NewRequestWithContext(ctx, "POST", openRouterURL, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", openRouterURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create OpenRouter request: %w", err)
+	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		// If the context was canceled due to deadline exceeded, return a timeout error
+		// If the context was canceled due to deadline exceeded, return the sentinel error
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("OpenRouter request timeout")
+			return "", context.DeadlineExceeded
 		}
 		return "", err
 	}
