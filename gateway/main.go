@@ -8,15 +8,18 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +31,23 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
+
+//go:embed templates/swagger.html
+var swaggerTemplateFS embed.FS
+
+var swaggerTmpl = template.Must(
+	template.ParseFS(swaggerTemplateFS, "templates/swagger.html"),
+)
+
+var swaggerVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+func getSwaggerUIVersion() string {
+	v := os.Getenv("SWAGGER_UI_VERSION")
+	if swaggerVersionRe.MatchString(v) {
+		return v
+	}
+	return "5.11.0"
+}
 
 type PaymentContext struct {
 	Recipient string `json:"recipient"`
@@ -119,26 +139,18 @@ func main() {
 	r.StaticFile("/openapi.yaml", "openapi.yaml")
 
 	r.GET("/docs", func(c *gin.Context) {
-		c.Header("Content-Type", "text/html")
-		c.String(200, `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>MicroAI Paygate Docs</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
-  <script>
-    SwaggerUIBundle({
-      url: '/openapi.yaml',
-      dom_id: '#swagger-ui'
-    });
-  </script>
-</body>
-</html>
-`)
+		data := struct {
+			Version string
+		}{
+			Version: getSwaggerUIVersion(),
+		}
+
+		c.Header("Content-Type", "text/html; charset=utf-8")
+
+		if err := swaggerTmpl.Execute(c.Writer, data); err != nil {
+			c.String(500, "failed to render swagger ui")
+			return
+		}
 	})
 
 	r.Use(cors.New(cors.Config{
@@ -233,7 +245,7 @@ func handleSummarize(c *gin.Context) {
 		// Cache middleware always sets this as []byte, safe to assert
 		requestBody = body.([]byte)
 	}
-	
+
 	// Read body if not already available
 	if requestBody == nil {
 		// Read body with limit (only if middleware didn't process it)
